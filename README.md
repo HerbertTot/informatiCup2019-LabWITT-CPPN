@@ -114,6 +114,26 @@ images are misclassified by the API, thus leading to wrong target labels when us
     python test.py
     ```
 
+#### Set up a Server
+You can provide the many of the functionality of the CLI over the single page application.
+For this additional requirements are needed.
+It is important that the normal requirements are not optional!
+To install the dependencies run
+```bash
+pip install -r requirements_server.txt
+``` 
 
+*  Start up the Server
+    ```bash
+    python server.py
+    ```
 
+##### Option provieded by the single page application
 
+|Description|Required|Default|
+|-----------|:------:|:-----:|
+|Input image file representing the target class, e.g. a `.png` file of a stop sign.|True|-|
+|Use RGB instead of grayscale.|False|False|
+|The targeted confidence value. The optimizer stops after finding an adversarial with a confidence greater than this value.|False|0.95|
+|The maximum number of API queries.|False|1000|
+|Use the input image to find a good initial CPPN config (e.g. net depth). Still in experimental status.|False|False|

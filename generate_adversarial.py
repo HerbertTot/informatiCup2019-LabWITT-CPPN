@@ -86,7 +86,8 @@ def generate_adversarial(target_class: str, target_conf: float = 0.95, target_im
     """
 
     def __init_cppn(curr_cppn: CPPN = None):
-        # print('\tInitializing CPPN ...')
+        if websocket:
+            send_message(websocket, 'Initializing CPPN ...')
         if target_image is not None and init:
             cppn = init_cppn_from_img(target_image, color=color)
         else:
@@ -95,8 +96,9 @@ def generate_adversarial(target_class: str, target_conf: float = 0.95, target_im
             else:
                 cppn = curr_cppn
                 cppn.reset()
-        # print('\t\tDone.')
-        # save_image('init.png', cppn.render_image())
+        if websocket:
+            send_message(websocket, '\tDone')
+            send_numpy_array_as_image(websocket, cppn.render_image(), final=False)
         return cppn
 
     # initialization
