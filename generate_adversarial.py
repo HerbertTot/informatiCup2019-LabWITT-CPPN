@@ -2,7 +2,7 @@ import sys
 import numpy as np
 import torch
 from util import get_confidence, send_query, save_image, save_gif_from_images, write_to_log, \
-    load_image, query_yes_no, clean_filename, image_to_grayscale
+    load_image, query_yes_no, clean_filename, image_to_grayscale, send_img, send_message, send_numpy_array_as_image, send_gif
 from cppn_model import CPPN
 from cppn_init import init_cppn_from_img
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
@@ -10,6 +10,7 @@ from pathlib import Path
 
 from typing import List
 
+from starlette.websockets import WebSocket
 
 def parse_args():
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
@@ -62,7 +63,9 @@ def generate_adversarial(target_class: str, target_conf: float = 0.95, target_im
                          color: bool = True,
                          max_queries=1000,
                          image_size: int = 64,
-                         init: bool = False) -> (np.array, float, int, List[np.array], CPPN):
+                         init: bool = False,
+                         websocket: WebSocket = None,
+                         client_id: str = None) -> (np.array, float, int, List[np.array], CPPN):
     """
     Generates an adversarial image for the target class using evolution strategies to optimize a CPPN.
 
@@ -74,6 +77,8 @@ def generate_adversarial(target_class: str, target_conf: float = 0.95, target_im
         max_queries (int): Maximum number of API queries to make. Optimization terminates if this value is reached.
         image_size (int): The image size of the generated adversarial.
         init (bool): If True, initialize the CPPN using the target_image.
+        websocket (WebSocket): Websocket of the corresponding client
+        client_id (str): Id of the client, with are updates send to
 
     Returns:
         np.array: the generated adversarial image.
@@ -83,7 +88,8 @@ def generate_adversarial(target_class: str, target_conf: float = 0.95, target_im
     """
 
     def __init_cppn(curr_cppn: CPPN = None):
-        # print('\tInitializing CPPN ...')
+        if websocket:
+            send_message(websocket, 'Initializing CPPN ...')
         if target_image is not None and init:
             cppn = init_cppn_from_img(target_image, color=color)
         else:
@@ -92,8 +98,9 @@ def generate_adversarial(target_class: str, target_conf: float = 0.95, target_im
             else:
                 cppn = curr_cppn
                 cppn.reset()
-        # print('\t\tDone.')
-        # save_image('init.png', cppn.render_image())
+        if websocket:
+            send_message(websocket, '\tDone')
+            send_numpy_array_as_image(websocket, cppn.render_image(), final=False)
         return cppn
 
     # initialization
@@ -113,9 +120,15 @@ def generate_adversarial(target_class: str, target_conf: float = 0.95, target_im
     try_same_mutation = False
     not_improving_since = 0
 
-    print('\tOptimizing on API ...')
-    print('\t\tAPI queries\tconfidence\t')
-    print(f'\t\t  {num_queries}\t\t{np.round(curr_conf, 4)}')
+    if websocket:
+        send_message(websocket, 'Optimizing on API ...')
+        send_message(websocket, '\tAPI queries\tconfidence\t')
+        send_message(websocket, f'\t  {num_queries}\t\t{np.round(curr_conf, 4)}')
+    else:
+        print('\tOptimizing on API ...')
+        print('\t\tAPI queries\tconfidence\t')
+        print(f'\t\t  {num_queries}\t\t{np.round(curr_conf, 4)}')
+
     # optimization
     while curr_conf < target_conf:
         if num_queries >= max_queries:
@@ -132,7 +145,11 @@ def generate_adversarial(target_class: str, target_conf: float = 0.95, target_im
             curr_conf = get_confidence(curr_image, target_class)
             num_queries += 1
             not_improving_since = 0
-            print(f'\t\t  {num_queries}\t\t{np.round(curr_conf, 4)}')
+
+            if websocket:
+                send_message(websocket, f'\t  {num_queries}\t\t{np.round(curr_conf, 4)}')
+            else:
+                print(f'\t\t  {num_queries}\t\t{np.round(curr_conf, 4)}')
             continue
 
         # optim step
@@ -148,6 +165,10 @@ def generate_adversarial(target_class: str, target_conf: float = 0.95, target_im
             not_improving_since = 0
             curr_weights = new_weights
             curr_image = new_image
+
+            if websocket:
+                send_numpy_array_as_image(websocket, curr_image, final=False)
+
             generated_images.append(curr_image)
             final_conv_images.append(curr_image)
             if new_conf - curr_conf > 0.01:
@@ -160,7 +181,26 @@ def generate_adversarial(target_class: str, target_conf: float = 0.95, target_im
             cppn.set_weights(curr_weights)
             if not_improving_since > 100:
                 curr_conf = 0  # forces reset
-        print(f'\t\t  {num_queries}\t\t{np.round(curr_conf, 4)}')
+
+        if websocket:
+            send_message(websocket, f'\t  {num_queries}\t\t{np.round(curr_conf, 4)}')
+        else:
+            print(f'\t\t  {num_queries}\t\t{np.round(curr_conf, 4)}')
+
+    if websocket:
+        path = str(Path('server/image/' + clean_filename(client_id + '.gif')))
+        save_gif_from_images(path, final_conv_images)
+        send_numpy_array_as_image(websocket, curr_image, final=False)
+
+        conf =np.round(curr_conf, 4)
+        if conf < target_conf:
+            send_message(websocket, f'Failed to generate an adversarial image after {max_queries} queries.')
+        else:
+            send_message(websocket, f'Found an adversarial image with > {target_conf} API confidence after {num_queries} queries.')
+
+        send_message(websocket, 'Finished')
+        send_gif(websocket, path, final=True)
+
     return curr_image, np.round(curr_conf, 4), num_queries, final_conv_images, cppn
 
 

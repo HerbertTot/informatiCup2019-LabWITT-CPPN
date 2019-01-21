@@ -13,7 +13,14 @@ import string
 import unicodedata
 from typing import List
 
+from starlette.websockets import WebSocketState, WebSocket
+import asyncio
+import base64
+import time
+from threading import Thread
+
 # load API config from 'API_config.ini'
+
 config = configparser.ConfigParser()
 config.read('API_config.ini')
 _URL = config['API']['URL']
@@ -228,3 +235,147 @@ def clean_filename(filename: str, replace: str = ' '):
         print(
             "Warning, filename truncated because it was over {}. Filenames may no longer be unique".format(char_limit))
     return cleaned_filename[:char_limit]
+
+"""
+Server utils
+"""
+
+
+def load_img_to_bytes(file_path: str) -> BytesIO:
+    """
+    Load an Image at the given path in to an ByteIO Object
+
+    Args:
+        file_path: Recursiv path to the image, starting at the main directory of the repo
+
+    Returns:
+        ByteIO: Images
+    """
+    # Load Image from given Filepath
+    img = io.imread(file_path)
+
+    img = transform.resize(img, (64, 64))
+
+    image = img_as_ubyte(img)
+
+    image_file = BytesIO()
+
+    if image.ndim == 2:
+        image = np.stack((image,) * 3, axis=-1)
+    io.imsave(image_file, image)
+    image_file.seek(0)
+    return image_file
+
+
+def send_message(websocket: WebSocket, message: str) -> None:
+    """
+    Send a text message to the given websocket
+    In an different Thread
+
+    Args:
+        websocket: Client with will be messaged
+        message: Message to be send
+    """
+    Thread(target=__send_message, args=(websocket, message)).start()
+
+
+def __send_message(websocket: WebSocket, message: str) -> None:
+    """
+    Send a text message to the given websocket
+
+    Args:
+        websocket: Client with will be messaged
+        message: Message to be send
+    """
+    if websocket.client_state == WebSocketState.CONNECTED:
+        asyncio.run(websocket.send_json({'data': message}))
+
+
+def send_img(websocket: WebSocket, image_path: str, final: bool) -> None:
+    """
+    Send a image to the given websocket
+    In an different Thread
+
+    Args:
+        websocket: Client with will be messaged
+        image_path: recursiv path, starting from the main directory
+        final: is it the last image send?
+    """
+    Thread(target=__send_img, args=(websocket, image_path, final)).start()
+
+
+def __send_img(websocket: WebSocket, image_path: str, final: bool) -> None:
+    """
+    Send a image to the given websocket
+
+    Args:
+        websocket: Client with will be messaged
+        image_path: recursiv path, starting from the main directory
+        final: is it the last image send?
+    """
+    data_to_send = base64.b64encode(load_img_to_bytes(image_path).getvalue()).decode('utf-8')
+    data_to_send = 'data:image/png;base64,' + data_to_send
+
+    if websocket.client_state == WebSocketState.CONNECTED:
+        asyncio.run(websocket.send_json({'done': final, 'image': data_to_send}))
+
+
+def send_gif(websocket: WebSocket, image_path: str, final: bool) -> None:
+    """
+    Send a gif to the given websocket
+    In an different Thread
+
+    Args:
+        websocket: Client with will be messaged
+        image_path: recursiv path, starting from the main directory
+        final: is it the last image send?
+    """
+    Thread(target=__send_gif, args=(websocket, image_path, final)).start()
+
+
+def __send_gif(websocket: WebSocket, image_path: str, final: bool) -> None:
+    """
+    Send a gif to the given websocket
+
+    Args:
+        websocket: Client with will be messaged
+        image_path: recursiv path, starting from the main directory
+        final: is it the last image send?
+    """
+    with open(image_path, 'rb') as img_file:
+        img = img_file.read()
+
+        data_to_send = base64.b64encode(img).decode('utf-8')
+        data_to_send = 'data:image/gif;base64,' + data_to_send
+
+        if websocket.client_state == WebSocketState.CONNECTED:
+            asyncio.run(websocket.send_json({'done': final, 'image': data_to_send}))
+
+
+def send_numpy_array_as_image(websocket, image: np.ndarray, final) -> None:
+    """
+    Send a gif to the given websocket
+
+    Args:
+        websocket (websocket): Client with will be messaged
+        image (np.array): recursiv path, starting from the main directory
+        final (bool): is it the last image send?
+        """
+    Thread(target=__send_numpy_array_as_image, args=(websocket, image, final)).start()
+
+
+def __send_numpy_array_as_image(websocket, image: np.ndarray, final) -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        image = img_as_ubyte(image)
+        if image.ndim == 2:
+            image = np.stack((image,) * 3, axis=-1)
+
+        image_bytes = BytesIO()
+        io.imsave(image_bytes, image)
+
+        data_to_send = base64.b64encode(image_bytes.getvalue()).decode('utf-8')
+        data_to_send = 'data:image/png;base64,' + data_to_send
+
+        if websocket.client_state == WebSocketState.CONNECTED:
+            asyncio.run(websocket.send_json({'done': final, 'image': data_to_send}))

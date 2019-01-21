@@ -1,10 +1,6 @@
 # informatiCup2019-LabWITT-CPPN
 
 This repository is part of a submission for the [informatiCup 2019](http://www.informaticup.de) competition
-hosted by the [Gesellschaft für Informatik](https://gi.de).
-The [task](https://github.com/InformatiCup/InformatiCup2019/blob/master/Irrbilder.pdf) 
-of the 14th informatiCup is to generate [adversarial examples](https://blog.openai.com/adversarial-example-research/) 
-for a given neural network based classification API.
 
 Our solution in this repository is designed for the following setting:
 * The attacker does not have access to the dataset used to train the API classifier 
@@ -70,7 +66,6 @@ This repository includes a conda environment in `environment.yml` as well as a p
  both including all the necessary dependencies. We used python version 3.7.2 and although our code might be compatible
   with previous versions, we cannot guarantee downwards compatibility. We highly recommend installing the
    dependencies in a anconda environment or a python virtualenv.
- 
 To create a conda environment from this file, simply run
 ```bash
 conda env create -f environment.yml
@@ -120,7 +115,31 @@ images are misclassified by the API, thus leading to wrong target labels when us
     ```bash
     python test.py
     ```
-    
+  
+#### Set up a Server
+You can provide the many of the functionality of the CLI over the single page application.
+For this additional requirements are needed.
+It is important that the normal requirements are not optional!
+To install the dependencies run
+```bash
+pip install -r requirements_server.txt
+``` 
+
+Start up the Server
+```bash
+python server.py
+```
+
+##### Option provieded by the single page application
+
+|Description|Required|Default|
+|-----------|:------:|:-----:|
+|Input image file representing the target class, e.g. a `.png` file of a stop sign.|True|-|
+|Use RGB instead of grayscale.|False|False|
+|The targeted confidence value. The optimizer stops after finding an adversarial with a confidence greater than this value.|False|0.95|
+|The maximum number of API queries.|False|1000|
+|Use the input image to find a good initial CPPN config (e.g. net depth). Still in experimental status.|False|False|
+
     
 #### Overview of the Repository Contents
 * `examples/` contains all the generated adversarial images, in both 64 x 64 and 2000 x 2000 pixel resolutions, as well
@@ -134,11 +153,3 @@ as corresponding `.gif` files visualizing the generation process.
 * `test.py` includes some basic unit testing.
 * You can find images randomly sampled from the GTSRB dataset in the `test_images/` directory. These were used as input
  images during our experiments.
-
-
-
-
-
-
-
-
